@@ -1,0 +1,58 @@
+[project]
+name = "bid3-manuals-scraper"
+version = "0.1.0"
+description = "Bid3 Manuals Scraper"
+authors = [
+    {name = "AI Agent"}
+]
+requires-python = ">=3.12"
+dependencies = [
+    "selenium>=4.0.0",
+    "beautifulsoup4>=4.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.0.0",
+]
+
+[tool.setuptools]
+packages = ["bid3_manuals_scraper"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 79
+indent-width = 4
+fix = true
+
+[tool.ruff.lint]
+preview = true
+select = [
+    "A",  # prevent using keywords that clobber python builtins
+    "B",  # bugbear: security warnings
+    "C901", # mccabe complexity
+    "D", # pydocstyle
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "I", # imports
+    "ISC",  # implicit string concatenation
+    "NPY201", # numpy2-deprecation
+    "UP",  # alert you when better syntax is available in your python version
+    "RUF",  # the ruff developer's own rules
+]
+ignore = [
+    "S101", # use of assert detected
+    "D1", # missing docstring
+    "D203", "D205", "D212", "D213", # docstring formatting
+    "D4", # docstring formatting
+]
+
+[tool.ruff.format]
+# Use single quotes for non-triple-quoted strings.
+quote-style = "single"
+
+[tool.mypy]
+disable_error_code = ["assignment"]
+ignore_errors = true
