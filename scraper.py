@@ -1,10 +1,16 @@
 """
-Bid3 Manuals Scraper
+Bid3 Manuals Scraper (fixed version)
 
 This module provides functionality to scrape and download manual pages
-from the Bid3 portal as .mhtml files for offline use.
+from the Bid3 portal as .mhtml files for offline use.  Compared to the
+original `scraper.py`, this version writes MHTML files in binary mode
+and waits for pages to finish loading before capturing the snapshot. Without
+these changes, the output MHTML can be incomplete or corrupted (e.g.,
+missing embedded CSS and images), which may render as a blank page when
+viewed offline.
 """
 
+import json
 import logging
 import os
 import re
@@ -39,28 +45,41 @@ logger = logging.getLogger(__name__)
 class Bid3ManualsScraper:
     """Scraper for Bid3 manual pages."""
 
-    def __init__(self, output_dir: str = 'output'):
+    def __init__(
+            self,
+            output_dir: str = 'output',
+            urls_path: str = 'manual_urls.json'):
         """
         Initialize the scraper.
 
         Args:
             output_dir: Directory to save downloaded files
+            urls_path: Path to JSON file with manual URLs
         """
         load_dotenv()
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+
+        # Create subfolders for user_manual and technical_manual
+        self.user_manual_dir = self.output_dir / 'user_manual'
+        self.technical_manual_dir = self.output_dir / 'technical_manual'
+        self.user_manual_dir.mkdir(exist_ok=True)
+        self.technical_manual_dir.mkdir(exist_ok=True)
 
         self.username = os.getenv('BID3_USERNAME')
         self.password = os.getenv('BID3_PASSWORD')
 
         if not self.username or not self.password:
             raise ValueError(
-                'BID3_USERNAME and BID3_PASSWORD must be set in .env file'
-            )
+                'BID3_USERNAME and BID3_PASSWORD must be set in .env file')
 
         self.base_url = 'https://bid3.afry.com'
         self.downloaded_urls: set[str] = set()
         self.driver: webdriver.Chrome | None = None
+
+        # Load manual URLs from JSON file
+        with open(urls_path, encoding='utf-8') as f:
+            self.manual_urls = json.load(f)
 
     def _setup_driver(self) -> webdriver.Chrome:
         """Set up Chrome WebDriver with appropriate options."""
@@ -70,6 +89,9 @@ class Bid3ManualsScraper:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
+        # Uncomment and set if you have a custom Chrome install:
+        # chrome_options.binary_location = (
+        #     "C:/Program Files/Google/Chrome/Application/chrome.exe")
 
         # Use webdriver-manager to automatically download correct ChromeDriver
         service = Service(ChromeDriverManager().install())
@@ -153,73 +175,88 @@ class Bid3ManualsScraper:
             logger.error(f'Login error: {e}')
             return False
 
-    def _generate_filename(self, url: str) -> str:
+    def _generate_filename_and_folder(self, url: str) -> tuple[Path, str]:
         """
-        Generate filename based on URL and naming convention.
+        Generate output folder and filename based on URL.
 
         Args:
-            url: The URL to generate filename for
+            url: The URL to generate filename and folder for
 
         Returns:
-            Generated filename with .mhtml extension
+            (output_folder, filename)
         """
         # Remove base URL prefix
         path = url.replace(f'{self.base_url}/pages/', '')
-
-        # Extract manual type and page title
         parts = path.split('/')
         if len(parts) >= 2:
             manual_type = parts[0]  # user-manual or technical-manual
             page_title = parts[1].replace('.html', '')
-
-            # Handle subpages
             if len(parts) > 2:
                 subpage = '/'.join(parts[2:]).replace('.html', '')
                 page_title = f'{page_title}_{subpage}'
-
-            filename = f'{manual_type}_{page_title}.mhtml'
+            filename = f'{page_title}.mhtml'
+            if manual_type == 'user-manual':
+                folder = self.user_manual_dir
+            elif manual_type == 'technical-manual':
+                folder = self.technical_manual_dir
+            else:
+                folder = self.output_dir
         else:
-            # Fallback filename
             filename = path.replace('/', '_').replace('.html', '.mhtml')
-
-        # Clean filename for filesystem
+            folder = self.output_dir
         filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-        return filename
+        return folder, filename
 
     def _save_page_as_mhtml(self, url: str) -> bool:
         """
-        Save current page as .mhtml file.
+        Save the currently loaded page as an MHTML file.
+
+        Chrome's DevTools API returns the MHTML document as a UTF-8 string,
+        but it may contain binary sections.  Writing with a text file handle
+        or the wrong encoding can corrupt the archive and result in blank
+        pages when viewed later.  To avoid this, we always encode the
+        returned string to bytes and write it with a binary file handle.
 
         Args:
             url: URL of the page to save
 
         Returns:
-            True if successful, False otherwise
+            True if the file was saved successfully, False otherwise.
         """
         if not self.driver:
             return False
 
         try:
-            filename = self._generate_filename(url)
-            filepath = self.output_dir / filename
+            folder, filename = self._generate_filename_and_folder(url)
+            folder.mkdir(exist_ok=True)
+            filepath = folder / filename
 
-            # Use Chrome DevTools to save as MHTML
-            self.driver.execute_cdp_cmd(
-                'Page.captureSnapshot',
-                {'format': 'mhtml'}
-            )
+            # Ensure the DOM is fully loaded before capturing.  Without this
+            # step the DevTools snapshot may miss late-loading assets or
+            # incomplete markup which can lead to a blank page on replay.
+            WebDriverWait(self.driver, 10).until(
+                lambda d: d.execute_script(
+                    'return document.readyState') == 'complete')
+            # Small additional wait to allow asynchronous resources to finish
+            time.sleep(2)
 
-            # Get the MHTML content
+            # Capture the page as MHTML via the Chrome DevTools Protocol
             result = self.driver.execute_cdp_cmd(
                 'Page.captureSnapshot',
                 {'format': 'mhtml'}
             )
 
-            mhtml_content = result['data']
+            mhtml_content: str = result.get('data', '')
+            if not mhtml_content:
+                logger.error(f'No MHTML data returned for {url}')
+                return False
 
-            # Save to file
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(mhtml_content)
+            # Persist MHTML content to disk using binary mode.  The string
+            # returned by captureSnapshot is UTF-8 encoded; encoding it
+            # explicitly and writing bytes preserves CRLF line endings and
+            # embedded binary data.
+            with open(filepath, 'wb') as f:
+                f.write(mhtml_content.encode('utf-8'))
 
             logger.info(f'Saved: {filename}')
             return True
@@ -230,13 +267,13 @@ class Bid3ManualsScraper:
 
     def _get_subpage_links(self, url: str) -> list[str]:
         """
-        Extract subpage links from current page.
+        Extract subpage links from the current page.
 
         Args:
             url: Current page URL to extract links from
 
         Returns:
-            List of subpage URLs with same prefix
+            List of subpage URLs with the same prefix
         """
         if not self.driver:
             return []
@@ -244,18 +281,14 @@ class Bid3ManualsScraper:
         try:
             # Parse page content
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            links = []
+            links: list[str] = []
 
             # Find all links
             for link in soup.find_all('a', href=True):
                 if not isinstance(link, Tag):
                     continue
 
-                try:
-                    href = link['href']
-                except (KeyError, TypeError):
-                    continue
-
+                href = link.get('href')
                 if not href:
                     continue
 
@@ -263,12 +296,14 @@ class Bid3ManualsScraper:
                 absolute_url = urljoin(url, str(href))
 
                 # Check if link starts with same prefix as parent page
-                if absolute_url.startswith(url.rsplit('/', 1)[0] + '/'):
+                parent_prefix = url.rsplit('/', 1)[0] + '/'
+                if absolute_url.startswith(parent_prefix):
                     # Ensure it's an HTML page
                     if absolute_url.endswith('.html'):
                         links.append(absolute_url)
 
-            return list(set(links))  # Remove duplicates
+            # Remove duplicates by converting to a set
+            return list(set(links))
 
         except Exception as e:
             logger.error(f'Error extracting links from {url}: {e}')
@@ -276,7 +311,7 @@ class Bid3ManualsScraper:
 
     def download_page_recursive(self, url: str) -> None:
         """
-        Download page and recursively download subpages.
+        Download the specified page and recursively download its subpages.
 
         Args:
             url: URL to download
@@ -294,7 +329,7 @@ class Bid3ManualsScraper:
 
             # Navigate to page
             self.driver.get(url)
-            time.sleep(2)  # Wait for page to load
+            time.sleep(2)  # Wait for initial page load
 
             # Save page as MHTML
             if self._save_page_as_mhtml(url):
@@ -313,48 +348,6 @@ class Bid3ManualsScraper:
 
     def scrape_manuals(self) -> None:
         """Main method to scrape all manual pages."""
-        # User Manual URLs
-        user_manual_urls = [
-            'https://bid3.afry.com/pages/user-manual/installing-bid3.html',
-            'https://bid3.afry.com/pages/user-manual/getting-started.html',
-            'https://bid3.afry.com/pages/user-manual/inputs.html',
-            'https://bid3.afry.com/pages/user-manual/running-bid3.html',
-            'https://bid3.afry.com/pages/user-manual/outputs.html',
-            'https://bid3.afry.com/pages/user-manual/additional-features.html',
-            'https://bid3.afry.com/pages/user-manual/bid3-short-term.html',
-            ('https://bid3.afry.com/pages/user-manual/'
-             'common-warnings-and-errors.html')
-        ]
-
-        # Technical Manual URLs
-        technical_manual_urls = [
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'auto-build-module.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'policy-build-module.html'),
-            'https://bid3.afry.com/pages/technical-manual/banding-module.html',
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'calendar-constraints.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'dispatch-module.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'economics-modules.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'fuel-mode-module.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'redispatch-module.html'),
-            'https://bid3.afry.com/pages/technical-manual/retail-module.html',
-            'https://bid3.afry.com/pages/technical-manual/sos-module.html',
-            'https://bid3.afry.com/pages/technical-manual/lole-module.html',
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'water-value-modules.html'),
-            'https://bid3.afry.com/pages/technical-manual/co-products.html',
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'nodal-modelling.html'),
-            ('https://bid3.afry.com/pages/technical-manual/'
-             'bid3-db-structure.html')
-        ]
-
         try:
             # Setup driver
             self.driver = self._setup_driver()
@@ -366,12 +359,12 @@ class Bid3ManualsScraper:
 
             # Download User Manual pages
             logger.info('Starting User Manual downloads')
-            for url in user_manual_urls:
+            for url in self.manual_urls.get('user_manual', []):
                 self.download_page_recursive(url)
 
             # Download Technical Manual pages
             logger.info('Starting Technical Manual downloads')
-            for url in technical_manual_urls:
+            for url in self.manual_urls.get('technical_manual', []):
                 self.download_page_recursive(url)
 
             downloaded_count = len(self.downloaded_urls)
@@ -386,7 +379,7 @@ class Bid3ManualsScraper:
                 self.driver.quit()
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     scraper = Bid3ManualsScraper()
     scraper.scrape_manuals()
