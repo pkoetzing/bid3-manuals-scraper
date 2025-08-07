@@ -1,0 +1,12 @@
+[project]
+name = "bid3-manuals-scraper"
+version = "0.1.0"
+description = "Scraper for Bid3 manual pages, downloads as MHTML."
+authors = ["pkoetzing"]
+requires-python = ">=3.8"
+dependencies = [
+    "beautifulsoup4",
+    "python-dotenv",
+    "selenium",
+    "webdriver-manager"
+]
