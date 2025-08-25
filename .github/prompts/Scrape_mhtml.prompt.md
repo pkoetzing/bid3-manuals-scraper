@@ -1,6 +1,6 @@
 ---
 mode: 'agent'
-model: 'Claude Sonnet 4'
+model: 'Claude Sonnet 3.5'
 tools: ['codebase', 'editFiles', 'findTestFiles', 'problems', 'runCommands', 'runTasks', 'runTests', 'search', 'searchResults', 'terminalLastCommand', 'terminalSelection', 'testFailure', 'usages', , 'installPythonPackage']
 description: 'Download the Bid3 Manuals'
 ---

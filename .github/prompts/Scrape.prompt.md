@@ -1,95 +1,102 @@
 ---
-mode: 'agent'
+mode: agent
 model: 'GPT-5 mini (Preview)'
-tools: ['codebase', 'editFiles', 'findTestFiles', 'problems', 'runCommands', 'runTasks', 'runTests', 'search', 'searchResults', 'terminalLastCommand', 'terminalSelection', 'testFailure', 'usages', , 'installPythonPackage']
-description: 'Download the Bid3 Manuals'
+tools: [codebase, editFiles, findTestFiles, problems, runCommands, runTasks, runTests, search, searchResults, terminalLastCommand, terminalSelection, testFailure, usages, installPythonPackage]
+description: "Scrape and mirror Bid3 manuals for offline use (action-focused prompt)"
 ---
 
-# Download Bid3 Manuals
+# Bid3 Manuals — Scraper prompt (improved)
 
-## 1. Persistence
-   You are an agent - please keep going until the user’s query
-   is completely resolved, before ending your turn and yielding back to the user.
-   Only terminate your turn when you are sure that the problem is solved.
+Goal
+- Mirror manuals hosted under https://bid3.afry.com/pages/ into a local
+   `html/` folder so the manuals are fully navigable offline.
 
-## 2. Tool-calling
-   If you are not sure about file content or codebase structure
-   pertaining to the user’s request, use your tools to read files
-   and gather the relevant information: do NOT guess or make up an answer.
+High-level plan (what I'll do)
+- Read starting URLs from `manual_urls.json` (or `manual_sections_urls.json`).
+- For each start URL, crawl only pages in the same path scope and download
+   their HTML and same-site assets (CSS, JS, images, fonts).
+- Rewrite internal links and asset references to local relative paths and
+   save content under `html/`, preserving the online relative structure.
+- Validate the local site (basic link-check) and retry or report any
+   unresolved references.
 
-## 3. Planning
-   You MUST plan extensively before each function call, and reflect extensively
-   on the outcomes of the previous function calls. DO NOT do this entire process
-   by making function calls only, as this can impair your ability to solve
-   the problem and think insightfully.
+Scope / constraints
+- Only process URLs beginning with `https://bid3.afry.com/pages/`.
+- For a start URL like
+   `https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html`,
+   include pages under `.../technical-manual/bid3-db-structure/` and sibling
+   pages in the same directory.
+- Avoid crawling outside the `pages/` path and avoid external domains except
+   for same-site assets when required.
 
-## 4. Tools and packages to use
-- webdriver-manager
-- selenium
-- beautifulsoup4
-- python-dotenv
-- ruff
-- mypy
-- pytest
+Authentication
+- If the site requires login, use Selenium + webdriver-manager to perform a
+   real browser login using credentials from `.env` (dotenv). Extract cookies
+   from the browser and populate a `requests.Session` so the crawler can make
+   authenticated requests without driving the browser for every page.
 
-## 5. Project structure
-- `cli.py`: Main command-line interface to run the scraper.
-- `src/`: Core scraping logic, including functions for downloading pages and assets.
-- `data/manuals_url.json`: JSON file containing the list of starting URLs to scrape.
-- `html/`: Directory where the mirrored HTML files and assets will be stored.
-- `tests/`: Unit tests for the scraper functions.
-- `.env`: Environment file for storing sensitive information like login credentials.
-- `.env.template`: Example environment file without sensitive data.
-- `requirements.txt`: List of required Python packages.
-- `README.md`: Documentation for the project.
-- `pyproject.toml`: Project configuration file.
+Hardening (required)
+- Use a configurable User-Agent and polite rate-limiting (delay per request).
+- Add retries with exponential backoff for transient HTTP failures.
+- Improve asset handling:
+   - Download fonts and images referenced directly in HTML and within CSS
+      (rewrite `url(...)` references).
+   - Normalize and deduplicate assets that include query strings by hashing
+      the final URL or saving query strings into filenames safely.
+   - Preserve directory structure for assets and avoid name collisions.
 
-## 6. Login to the Bid3 Portal
-url = https://bid3.afry.com/
-Use webdriver-manager + selenium to log in with credentials from .env.
-Extract cookies and populate requests.Session so crawl_directory can access authenticated content.
-Use credentials from the .env file
+Validation (required)
+- After saving pages, run a post-scrape checker that loads each saved HTML
+   file and verifies all internal `href` and resource `src` links resolve to a
+   local file. Report any broken internal links and attempt a best-effort
+   re-download or report them for manual review.
 
-## 7. Download the Bid3 Manual pages
+Deliverables
+- A runnable Python module/package (no external network credentials
+   committed) with:
+   - `scraper` module: crawl, asset download, link rewrite, login helper.
+   - `cli.py` to run the scrape against `manual_urls.json`.
+   - `requirements.txt` or updated `pyproject.toml` with required libs.
+   - Unit tests for key utilities and a post-scrape link-check test.
+   - `README.md` with usage and troubleshooting steps.
 
-### Role and Objective
-- Develop a web scraper to mirror a set of web pages for offline use, based on URLs provided in `data\manuals_url.json`.
+Tools / libraries to use
+- requests, beautifulsoup4, python-dotenv
+- selenium, webdriver-manager (for login and cookie extraction)
+- ruff, mypy for linting/type checking; pytest for tests
 
-### Workflow Checklist
-Begin with a concise checklist (3-7 bullets) of what you will do; keep items conceptual, not implementation-level:
-1. Load starting URLs from `data\manuals_url.json`.
-2. Identify target pages and resources within allowed path scope.
-3. Download HTML content and all related assets (CSS, JS, images).
-4. Update internal links and resource references for offline navigation.
-5. Save content to the `html` directory, preserving site structure.
-6. Validate that navigation and resources function offline; fix issues if found.
+Run instructions (developer)
+1. If necessary create and activate a venv and install deps:
 
-### Instructions
-- Read all starting URLs from `data\manuals_url.json`.
-- For each URL, download the page itself and all pages linked within the same path (i.e., subpages and sibling pages within the directory).
-- Ensure all related resources (HTML, CSS, JavaScript, images) required for full local functionality are downloaded.
-- Update internal links and resource references so navigation and media work correctly offline.
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-### Scope
-- Only handle URLs that start with `https://bid3.afry.com/pages/`.
-- For a starting URL like `https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html`, include all linked pages under `https://bid3.afry.com/pages/technical-manual/bid3-db-structure/`.
+2. Place credentials in `.env` (example provided in `.env.example`).
 
-### Local Directory Structure
-- Store the downloaded pages in an `html` subfolder, mirroring the online site's relative folder/file layout.
-    - Example: `https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html` becomes `html/technical-manual/bid3-db-structure.html`
+3. Run the scraper:
 
-### Output Format
-- Save files in the `html` directory with a structure that matches the online site.
+```cmd
+python -m cli manual_urls.json
+```
 
-### Hardening:
-Improve asset URL heuristics (font files, inline CSS url(...) rewriting).
-Handle query strings / duplicate filenames.
-Add retries, rate-limiting, and user-agent.
+4. Run the post-scrape checker:
 
-### Validation
-After each page download and rewrite of internal references, validate that local navigation and resources work by checking links and references. If issues are detected, self-correct and retry the affected step.
-Add an automated post-scrape checker that loads saved HTML files and ensures internal links resolve (basic link-check).
+```cmd
+python -m tests.run_tests
+```
 
-### Stop Conditions
-- All linked content and resources within each starting URL's directory are downloaded.
-- All internal references are updated; the offline site is fully navigable.
+Acceptance criteria
+- All pages and same-site assets referenced from the start-URL scope are
+   downloaded into `html/` and internal links point to local files.
+- The post-scrape checker reports zero unresolved internal links for the
+   pages in scope (or provides a short list of true failures).
+
+Notes / follow-ups
+- If login requires 2FA or other interactive steps, provide guidance or an
+   alternate API/cookie source; full headless login may not be possible.
+- For very large sections, consider parallelizing downloads while respecting
+   rate limits and robots.txt (not implemented unless requested).
+

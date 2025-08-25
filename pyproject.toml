@@ -9,14 +9,14 @@ requires-python = ">=3.12"
 dependencies = [
     "selenium>=4.0.0",
     "beautifulsoup4>=4.0.0",
-    "python-dotenv>=1.0.0"<
+    "python-dotenv>=1.0.0"
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.6.0",
-    "mypy>=1.0.0",,
-    "pytest">=7.0.0,
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
 ]
 
 [tool.setuptools]
