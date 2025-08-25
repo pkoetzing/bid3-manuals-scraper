@@ -3,23 +3,24 @@ name = "bid3-manuals-scraper"
 version = "0.1.0"
 description = "Bid3 Manuals Scraper"
 authors = [
-    {name = "AI Agent"}
+    {name = "GPT-5 mini"}
 ]
 requires-python = ">=3.12"
 dependencies = [
     "selenium>=4.0.0",
     "beautifulsoup4>=4.0.0",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.0.0"<
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff>=0.6.0",
-    "mypy>=1.0.0",
+    "mypy>=1.0.0",,
+    "pytest">=7.0.0,
 ]
 
 [tool.setuptools]
-packages = ["bid3_manuals_scraper"]
+packages = ["src"]
 
 [tool.ruff]
 target-version = "py312"

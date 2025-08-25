@@ -1,6 +1,6 @@
 ---
 mode: 'agent'
-model: 'Claude Sonnet 4'
+model: 'GPT-5 mini (Preview)'
 tools: ['codebase', 'editFiles', 'findTestFiles', 'problems', 'runCommands', 'runTasks', 'runTests', 'search', 'searchResults', 'terminalLastCommand', 'terminalSelection', 'testFailure', 'usages', , 'installPythonPackage']
 description: 'Download the Bid3 Manuals'
 ---
@@ -24,61 +24,72 @@ description: 'Download the Bid3 Manuals'
    the problem and think insightfully.
 
 ## 4. Tools and packages to use
-- uv: for creating and managing Python virtual environments
-- chromedriver.exe: for controlling headless Chrome browsers
-Update the pyproject.toml file to include the following packages:
+- webdriver-manager
 - selenium
 - beautifulsoup4
 - python-dotenv
 - ruff
 - mypy
+- pytest
 
-## 5. Login to the Bid3 Portal
+## 5. Project structure
+- `cli.py`: Main command-line interface to run the scraper.
+- `src/`: Core scraping logic, including functions for downloading pages and assets.
+- `data/manuals_url.json`: JSON file containing the list of starting URLs to scrape.
+- `html/`: Directory where the mirrored HTML files and assets will be stored.
+- `tests/`: Unit tests for the scraper functions.
+- `.env`: Environment file for storing sensitive information like login credentials.
+- `.env.template`: Example environment file without sensitive data.
+- `requirements.txt`: List of required Python packages.
+- `README.md`: Documentation for the project.
+- `pyproject.toml`: Project configuration file.
+
+## 6. Login to the Bid3 Portal
 url = https://bid3.afry.com/
-use credentials from the .env file
+Use webdriver-manager + selenium to log in with credentials from .env.
+Extract cookies and populate requests.Session so crawl_directory can access authenticated content.
+Use credentials from the .env file
 
-## 5. Download the Bid3 Manual pages
+## 7. Download the Bid3 Manual pages
 
-Visit the following links for the Bid3 User manual and technical manual.
-Download the pages as .mhtml files for offline use.
-Recursively follow any links on the listed pages to access subpages.
-Download all subpages as .mhtml files as well.
-Use the links as filenames, starting with either user-manual or technical-manual,
-followed by and underscore and the page title and .mhtml as the file extension.
-Omit the common prefix https://bid3.afry.com/pages/.
-E.g. https://bid3.afry.com/pages/user-manual/inputs.html downloaded
-becomes user-manual_inputs.mhtml.
-Only download pages that start with the same url as the parent page,
-e.g. if the parent page is https://bid3.afry.com/pages/user-manual/inputs.html,
-then only download pages that start with https://bid3.afry.com/pages/user-manual/inputs/
-like https://bid3.afry.com/pages/user-manual/inputs/standing-data.html
-Ignore any links that do not start with the same url prefix as the parent page.
-Download any page only once, even if it is linked from multiple pages.
-Save the downloaded files in the output folder
+### Role and Objective
+- Develop a web scraper to mirror a set of web pages for offline use, based on URLs provided in `data\manuals_url.json`.
 
-### User Manual
-https://bid3.afry.com/pages/user-manual/installing-bid3.html
-https://bid3.afry.com/pages/user-manual/getting-started.html
-https://bid3.afry.com/pages/user-manual/inputs.html
-https://bid3.afry.com/pages/user-manual/running-bid3.html
-https://bid3.afry.com/pages/user-manual/outputs.html
-https://bid3.afry.com/pages/user-manual/additional-features.html
-https://bid3.afry.com/pages/user-manual/bid3-short-term.html
-https://bid3.afry.com/pages/user-manual/common-warnings-and-errors.html
+### Workflow Checklist
+Begin with a concise checklist (3-7 bullets) of what you will do; keep items conceptual, not implementation-level:
+1. Load starting URLs from `data\manuals_url.json`.
+2. Identify target pages and resources within allowed path scope.
+3. Download HTML content and all related assets (CSS, JS, images).
+4. Update internal links and resource references for offline navigation.
+5. Save content to the `html` directory, preserving site structure.
+6. Validate that navigation and resources function offline; fix issues if found.
 
-### Technical Manual
-https://bid3.afry.com/pages/technical-manual/auto-build-module.html
-https://bid3.afry.com/pages/technical-manual/policy-build-module.html
-https://bid3.afry.com/pages/technical-manual/banding-module.html
-https://bid3.afry.com/pages/technical-manual/calendar-constraints.html
-https://bid3.afry.com/pages/technical-manual/dispatch-module.html
-https://bid3.afry.com/pages/technical-manual/economics-modules.html
-https://bid3.afry.com/pages/technical-manual/fuel-mode-module.html
-https://bid3.afry.com/pages/technical-manual/redispatch-module.html
-https://bid3.afry.com/pages/technical-manual/retail-module.html
-https://bid3.afry.com/pages/technical-manual/sos-module.html
-https://bid3.afry.com/pages/technical-manual/lole-module.html
-https://bid3.afry.com/pages/technical-manual/water-value-modules.html
-https://bid3.afry.com/pages/technical-manual/co-products.html
-https://bid3.afry.com/pages/technical-manual/nodal-modelling.html
-https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html
+### Instructions
+- Read all starting URLs from `data\manuals_url.json`.
+- For each URL, download the page itself and all pages linked within the same path (i.e., subpages and sibling pages within the directory).
+- Ensure all related resources (HTML, CSS, JavaScript, images) required for full local functionality are downloaded.
+- Update internal links and resource references so navigation and media work correctly offline.
+
+### Scope
+- Only handle URLs that start with `https://bid3.afry.com/pages/`.
+- For a starting URL like `https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html`, include all linked pages under `https://bid3.afry.com/pages/technical-manual/bid3-db-structure/`.
+
+### Local Directory Structure
+- Store the downloaded pages in an `html` subfolder, mirroring the online site's relative folder/file layout.
+    - Example: `https://bid3.afry.com/pages/technical-manual/bid3-db-structure.html` becomes `html/technical-manual/bid3-db-structure.html`
+
+### Output Format
+- Save files in the `html` directory with a structure that matches the online site.
+
+### Hardening:
+Improve asset URL heuristics (font files, inline CSS url(...) rewriting).
+Handle query strings / duplicate filenames.
+Add retries, rate-limiting, and user-agent.
+
+### Validation
+After each page download and rewrite of internal references, validate that local navigation and resources work by checking links and references. If issues are detected, self-correct and retry the affected step.
+Add an automated post-scrape checker that loads saved HTML files and ensures internal links resolve (basic link-check).
+
+### Stop Conditions
+- All linked content and resources within each starting URL's directory are downloaded.
+- All internal references are updated; the offline site is fully navigable.
